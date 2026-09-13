@@ -77,6 +77,8 @@ Most TV launchers are heavy, online, and crowded with promotions. BareLauncher i
 | 🚫 **Zero telemetry** | No analytics, no crash reporting, no background calls. Your usage stays on your device. |
 | 🚀 **Cold-start cache** | Wallpaper, shelf, and icons appear immediately after startup for a smooth, flash-free first frame. |
 
+Under **Settings → Apps**, enable **Always sort alphabetically** to keep all apps (including newly installed ones) in name order. Move is hidden while enabled; switching it off restores your saved manual order. Turn **Show home row** off to keep apps hidden on the home screen. Press Down to open the full app grid; Up from its first row or Back closes it. Both options are saved and included in backups.
+
 ---
 
 ## Why it's so small

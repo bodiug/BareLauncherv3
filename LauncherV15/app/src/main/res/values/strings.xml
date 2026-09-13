@@ -109,4 +109,7 @@
     <string name="toast_slideshow_need_permission">Photo access is needed to choose a folder</string>
     <string name="toast_slideshow_no_folders">No image folders found</string>
     <string name="folder_picker_title">Choose a slideshow folder</string>
+    <string name="settings_row_apps">Apps</string>
+    <string name="settings_row_alphabetical">Always sort alphabetically</string>
+    <string name="settings_row_home_row">Show home row</string>
 </resources>

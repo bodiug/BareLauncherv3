@@ -46,6 +46,8 @@ final class SettingsBackup {
 
     // Keys — intentionally the same strings as the SharedPreferences keys so
     // the file reads clearly and the activity maps them 1:1.
+    static final String K_ALPHABETICAL = "always_alphabetical";
+    static final String K_HOME_ROW = "show_home_row";
     static final String K_APP_ORDER  = "app_order";
     static final String K_HOME_COUNT = "home_count";
     static final String K_KEY_MAP    = "key_map";
@@ -56,6 +58,11 @@ final class SettingsBackup {
      *  empty so every key is always present in a well-formed file. */
     static String serialize(String appOrder, int homeCount, String keyMap,
                             String hiddenApps, int clockMode) {
+        return serialize(appOrder, homeCount, keyMap, hiddenApps, clockMode, false, true);
+    }
+
+    static String serialize(String appOrder, int homeCount, String keyMap,
+                            String hiddenApps, int clockMode, boolean alphabetical, boolean homeRow) {
         StringBuilder sb = new StringBuilder(256);
         sb.append(MAGIC).append('\t').append(VERSION).append('\n');
         line(sb, K_APP_ORDER,  appOrder);
@@ -63,6 +70,8 @@ final class SettingsBackup {
         line(sb, K_KEY_MAP,    keyMap);
         line(sb, K_HIDDEN,     hiddenApps);
         line(sb, K_CLOCK_MODE, Integer.toString(clockMode));
+        line(sb, K_ALPHABETICAL, alphabetical ? "1" : "0");
+        line(sb, K_HOME_ROW, homeRow ? "1" : "0");
         return sb.toString();
     }
 

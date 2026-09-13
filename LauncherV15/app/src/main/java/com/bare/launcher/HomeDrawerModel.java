@@ -252,11 +252,18 @@ final class HomeDrawerModel {
      * </ul>
      */
     static <T> MoveResult moveUp(List<T> order, int index, int homeCount) {
+        return moveUp(order, index, homeCount, true);
+    }
+
+    /** Grid-only mode must never create a home row by moving upwards. */
+    static <T> MoveResult moveUp(List<T> order, int index, int homeCount, boolean homeRowEnabled) {
+        if (!homeRowEnabled) homeCount = 0;
         int size = order.size();
         homeCount = clampHomeCount(homeCount, size);
         if (index < 0 || size == 0) return new MoveResult(homeCount, Math.max(0, index));
         int row = rowOf(index, homeCount);
         if (homeCount == 0 && row == 0) {
+            if (!homeRowEnabled) return new MoveResult(0, index);
             // No home row yet — pushing the top-row app up turns it into the
             // first home favourite (inverse of demoting the last home app).
             T app = order.remove(index);

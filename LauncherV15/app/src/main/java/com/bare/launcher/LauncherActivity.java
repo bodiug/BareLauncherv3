@@ -116,6 +116,8 @@ public class LauncherActivity extends Activity {
      *  single source of truth for ordering; this key only records where the
      *  home/drawer boundary sits. */
     private static final String KEY_HOME_COUNT = "home_count";
+    private static final String KEY_ALPHABETICAL = "always_alphabetical";
+    private static final String KEY_HOME_ROW = "show_home_row";
     // Persisted remote-key→app shortcut map. Format: "kc=pkg,kc=pkg,...".
     // Keys are raw Android keycode integers (e.g. 183 = KEYCODE_PROG_RED).
     // Loaded once at startup into the in-memory keyMap SparseArray; every
@@ -841,6 +843,9 @@ public class LauncherActivity extends Activity {
 
     // Stable settings-row identifiers (NOT list positions — the panel is now
     // page-based, so identity must be position-independent).
+    private static final int SR_ALPHABETICAL = 14, SR_HOME_ROW = 15, SR_APPS_MENU = 16;
+    private static final int SPAGE_APPS = 3;
+
     private static final int SR_HIDE_APPS          = 0;
     private static final int SR_KEYMAP             = 1;
     private static final int SR_WALLPAPER_MENU     = 2;   // → SPAGE_WALLPAPER
@@ -856,8 +861,9 @@ public class LauncherActivity extends Activity {
     private static final int SR_RESTORE            = 12;
     private static final int SR_IDLE_HIDE          = 13;  // hide UI when idle (slideshow sub-page)
 
+    private static final int[] SROWS_APPS = { SR_ALPHABETICAL, SR_HOME_ROW, SR_HIDE_APPS };
     private static final int[] SROWS_MAIN = {
-            SR_HIDE_APPS, SR_KEYMAP, SR_WALLPAPER_MENU, SR_CLOCK,
+            SR_APPS_MENU, SR_KEYMAP, SR_WALLPAPER_MENU, SR_CLOCK,
             SR_BACKUP_MENU, SR_SYSTEM, SR_ABOUT };
     private static final int[] SROWS_WALLPAPER = {
             SR_SET_WALLPAPER, SR_SLIDESHOW_FOLDER, SR_SLIDESHOW_DURATION,
@@ -871,6 +877,7 @@ public class LauncherActivity extends Activity {
     /** Row IDs of the page currently shown. */
     private int[] settingsPageRows() {
         switch (settingsPage) {
+            case SPAGE_APPS:      return SROWS_APPS;
             case SPAGE_WALLPAPER: return SROWS_WALLPAPER;
             case SPAGE_BACKUP:    return SROWS_BACKUP;
             default:              return SROWS_MAIN;
@@ -880,6 +887,9 @@ public class LauncherActivity extends Activity {
     /** Label resource for a row id. */
     private static int settingsRowLabelRes(int rowId) {
         switch (rowId) {
+            case SR_APPS_MENU:          return R.string.settings_row_apps;
+            case SR_ALPHABETICAL:       return R.string.settings_row_alphabetical;
+            case SR_HOME_ROW:           return R.string.settings_row_home_row;
             case SR_HIDE_APPS:          return R.string.settings_row_manage_hidden;
             case SR_KEYMAP:             return R.string.settings_row_button_shortcuts;
             case SR_WALLPAPER_MENU:     return R.string.settings_row_wallpaper_menu;
@@ -900,7 +910,7 @@ public class LauncherActivity extends Activity {
 
     /** Settings rows that show a right-side state indicator. */
     private static boolean settingsRowHasIndicator(int rowId) {
-        return rowId == SR_CLOCK
+        return rowId == SR_ALPHABETICAL || rowId == SR_HOME_ROW || rowId == SR_CLOCK
             || rowId == SR_SLIDESHOW_FOLDER
             || rowId == SR_SLIDESHOW_DURATION
             || rowId == SR_SLIDESHOW_RESTART
@@ -1087,7 +1097,14 @@ public class LauncherActivity extends Activity {
         }
     };
 
+    private boolean alwaysAlphabetical() { return prefs.getBoolean(KEY_ALPHABETICAL, false); }
+    private boolean showHomeRow() { return prefs.getBoolean(KEY_HOME_ROW, true); }
+
     private void applyStoredOrder(List<AppInfo> apps) {
+        if (alwaysAlphabetical()) {
+            Collections.sort(apps, (a, b) -> String.CASE_INSENSITIVE_ORDER.compare(a.label, b.label));
+            return;
+        }
         String raw = prefs.getString(KEY_APP_ORDER, null);
         Map<String, Integer> rank = AppOrder.parse(raw);
         if (rank.isEmpty()) return;
@@ -1106,7 +1123,7 @@ public class LauncherActivity extends Activity {
     }
 
     private void saveOrder() {
-        if (appList.isEmpty()) return;
+        if (appList.isEmpty() || alwaysAlphabetical()) return;
         ArrayList<String> pkgs = new ArrayList<>(appList.size());
         for (int i = 0; i < appList.size(); i++) pkgs.add(appList.get(i).packageName);
         prefs.edit()
@@ -1183,12 +1200,12 @@ public class LauncherActivity extends Activity {
     }
 
     /** Effective, clamped home-row size for the current visible count. Never
-     *  negative; safe to use as a list bound. Enforces a floor of one home app
+     *  negative; zero when the home row is disabled. Otherwise enforces one home app
      *  whenever any app is visible so the home screen always has a cell to
      *  focus (and to press DOWN on to open the drawer) — an empty home row
      *  would otherwise strand the user with no way back into the drawer. */
     private int effectiveHomeCount(int visibleCount) {
-        if (visibleCount <= 0) return 0;
+        if (visibleCount <= 0 || !showHomeRow()) return 0;
         return Math.max(1, HomeDrawerModel.clampHomeCount(homeCount, visibleCount));
     }
 
@@ -1255,7 +1272,7 @@ public class LauncherActivity extends Activity {
         // only row (few apps), navDown returns the same index so focus simply
         // stays on the favourite. Clamp the home index defensively.
         int homeIdx = Math.min(Math.max(0, s.focusedIndex), Math.max(0, hc - 1));
-        int focus = HomeDrawerModel.navDown(homeIdx, visible.size(), hc);
+        int focus = showHomeRow() ? HomeDrawerModel.navDown(homeIdx, visible.size(), hc) : 0;
         // Hide the home shelf while the drawer covers the screen so we never
         // draw both grids at once (the drawer's row 0 already mirrors the home
         // row). INVISIBLE (not GONE) avoids a relayout on open/close.
@@ -1307,7 +1324,7 @@ public class LauncherActivity extends Activity {
         resolveHomeCount(visibleSnapshot.size());
         final int hc = effectiveHomeCount(visibleSnapshot.size());
         setHomeChromeVisible(true);             // restore toolbar + clock
-        s2.setVisibility(View.VISIBLE);         // restore the home shelf hidden on open
+        s2.setVisibility(showHomeRow() ? View.VISIBLE : View.INVISIBLE);
         if (hc <= 0 || visibleSnapshot.isEmpty()) {
             pushHomeRow(s2, visibleSnapshot, hc);   // clears the shelf
             RingView rv = ringView; if (rv != null) rv.setVisibility(View.INVISIBLE);
@@ -1730,6 +1747,7 @@ public class LauncherActivity extends Activity {
             ViewTreeObserver vto = s.getViewTreeObserver();
             if (vto.isAlive()) vto.addOnGlobalLayoutListener(focusRestoreListener);
         }
+        if (!showHomeRow() && shelf != null) shelf.setVisibility(View.INVISIBLE);
         FrameLayout r = root;
         if (r != null) {
             ViewTreeObserver rvto = r.getViewTreeObserver();
@@ -2497,6 +2515,7 @@ public class LauncherActivity extends Activity {
         int extraVis = inputMode ? View.GONE : View.VISIBLE;
         menuUninstall.setVisibility(extraVis);
         menuAppInfo.setVisibility(extraVis);
+        menuMove.setVisibility(alwaysAlphabetical() ? View.GONE : View.VISIBLE);
         cell.getLocationOnScreen(menuCellLoc);
         FrameLayout r = root; if (r == null) return;
         r.getLocationOnScreen(menuRootLoc);
@@ -2635,7 +2654,8 @@ public class LauncherActivity extends Activity {
         int[] order = input ? MENU_ROWS_INPUT : MENU_ROWS_FULL;
         int idx = 0;
         for (int i = 0; i < order.length; i++) if (order[i] == cur) { idx = i; break; }
-        idx = Math.max(0, Math.min(order.length - 1, idx + dir));
+        int count = order.length - (alwaysAlphabetical() ? 1 : 0);
+        idx = Math.max(0, Math.min(count - 1, idx + dir));
         return order[idx];
     }
 
@@ -3124,7 +3144,7 @@ public class LauncherActivity extends Activity {
         // hides the app from the shelf/drawer (it stays installed and remains
         // available for remote-key shortcuts + the Manage-hidden-apps list).
         private static final int MENU_HIDE      = 3;
-        int menuSelection = MENU_MOVE;
+        int menuSelection = alwaysAlphabetical() ? MENU_HIDE : MENU_MOVE;
 
         RecyclingShelfView(Context ctx) {
             super(ctx);
@@ -3172,7 +3192,7 @@ public class LauncherActivity extends Activity {
         }
         @Override public void onMenuMove() {
             if (!reorderMode) return;
-            menuSelection = MENU_MOVE;
+            menuSelection = alwaysAlphabetical() ? MENU_HIDE : MENU_MOVE;
             LauncherActivity.this.updateMenuHighlight();
             enterActiveMove();   // "Move" confirm → start moving (LEFT/RIGHT)
         }
@@ -3181,7 +3201,7 @@ public class LauncherActivity extends Activity {
             if (reorderMode) return;
             reorderMode   = true;
             dragIndex     = idx;
-            menuSelection = MENU_MOVE;
+            menuSelection = alwaysAlphabetical() ? MENU_HIDE : MENU_MOVE;
             menuDismissedForMove = false;
             moveActive    = false;
             LauncherActivity.this.menuHost = this;   // shelf owns the shared menu now
@@ -3223,6 +3243,7 @@ public class LauncherActivity extends Activity {
          *  doesn't sit over the sliding icon; LEFT/RIGHT now reorder the app.
          *  OK or BACK commits. */
         private void enterActiveMove() {
+            if (alwaysAlphabetical()) return;
             moveActive = true;
             menuDismissedForMove = true;
             hideContextMenu();
@@ -3525,6 +3546,15 @@ public class LauncherActivity extends Activity {
          *    its visual cue (the bounce that previously rode on the focus
          *    listener path). */
         void requestFocusOnIndex(int idx, boolean snap) {
+            if (anyOverlayLogicallyOpen()) return;
+            if (!showHomeRow()) {
+                // Background list refreshes and resume focus must not open the drawer.
+                if (drawer != null && drawer.getVisibility() == View.VISIBLE && !drawer.closing) return;
+                if (mapperBtnView != null && (netBtn == null || !netBtn.hasFocus())) {
+                    mapperBtnView.requestFocus();
+                }
+                return;
+            }
             if (displayed.isEmpty()) return;
             int sz = displayed.size();
             boolean wrapped = false;
@@ -4436,7 +4466,7 @@ public class LauncherActivity extends Activity {
          *  still hidden (the "stuck on wallpaper, no apps" bug). */
         boolean closing      = false;
         int     dragIndex    = -1;
-        int     menuSelection = RecyclingShelfView.MENU_MOVE;
+        int     menuSelection = alwaysAlphabetical() ? RecyclingShelfView.MENU_HIDE : RecyclingShelfView.MENU_MOVE;
         boolean fastNav      = false;
         // See RecyclingShelfView.rebuildingApps — same fix, same reason,
         // mirrored here so the drawer is not exposed to the identical
@@ -4515,7 +4545,7 @@ public class LauncherActivity extends Activity {
         }
         @Override public void onMenuMove() {
             if (!reorderMode) return;
-            menuSelection = RecyclingShelfView.MENU_MOVE;
+            menuSelection = alwaysAlphabetical() ? RecyclingShelfView.MENU_HIDE : RecyclingShelfView.MENU_MOVE;
             enterActiveMove();   // Move confirm → stage 2 (2-D move)
         }
 
@@ -4581,7 +4611,7 @@ public class LauncherActivity extends Activity {
                     // mid-teardown and will settle it itself.
                     if (myGen != setAppsGen) return;
                     rebuildingApps = false;
-                    if (getVisibility() == View.VISIBLE) requestFocusOnIndex(fi, true);
+                    if (getVisibility() == View.VISIBLE && !anyOverlayLogicallyOpen()) requestFocusOnIndex(fi, true);
                 });
             } else {
                 // No focus-restore callback is being posted for this call
@@ -5011,7 +5041,7 @@ public class LauncherActivity extends Activity {
             moveActive  = false;
             dragIndex   = idx;
             focusedIndex = idx;
-            menuSelection = RecyclingShelfView.MENU_MOVE;
+            menuSelection = alwaysAlphabetical() ? RecyclingShelfView.MENU_HIDE : RecyclingShelfView.MENU_MOVE;
             LauncherActivity.this.menuHost = this;
             LauncherActivity.this.ensureMenuOverlay();
             rebindAttached(); // repaint drag dimming
@@ -5023,6 +5053,7 @@ public class LauncherActivity extends Activity {
 
         /** Stage-2 entry: hide the menu; D-pad now performs 2-D moves. */
         private void enterActiveMove() {
+            if (alwaysAlphabetical()) return;
             moveActive = true;
             hideContextMenu();
             DrawerCell cv = attached.get(dragIndex);
@@ -5062,8 +5093,8 @@ public class LauncherActivity extends Activity {
         private void applyMove(HomeDrawerModel.MoveResult r) {
             int size = displayed.size();
             int newHc = HomeDrawerModel.clampHomeCount(r.homeCount, size);
-            if (size >= 1 && newHc < 1) newHc = 1;   // keep at least one home app
-            LauncherActivity.this.homeCount = newHc;
+            if (showHomeRow() && size >= 1 && newHc < 1) newHc = 1;   // keep at least one home app
+            if (showHomeRow()) LauncherActivity.this.homeCount = newHc;
             LauncherActivity.this.rebuildAppListFromVisible(displayed);
             // Persist immediately on every move so the live in-memory order can
             // never diverge from what is saved — a Back/reconcile exit then has
@@ -5099,12 +5130,13 @@ public class LauncherActivity extends Activity {
         }
 
         private void moveDir(int kc) {
+            if (alwaysAlphabetical()) return;
             int hc = hc();
             HomeDrawerModel.MoveResult r;
             switch (kc) {
                 case KeyEvent.KEYCODE_DPAD_LEFT:  r = HomeDrawerModel.moveLeft (displayed, dragIndex, hc); break;
                 case KeyEvent.KEYCODE_DPAD_RIGHT: r = HomeDrawerModel.moveRight(displayed, dragIndex, hc); break;
-                case KeyEvent.KEYCODE_DPAD_UP:    r = HomeDrawerModel.moveUp   (displayed, dragIndex, hc); break;
+                case KeyEvent.KEYCODE_DPAD_UP:    r = HomeDrawerModel.moveUp   (displayed, dragIndex, hc, showHomeRow()); break;
                 case KeyEvent.KEYCODE_DPAD_DOWN:  r = HomeDrawerModel.moveDown (displayed, dragIndex, hc); break;
                 default: return;
             }
@@ -5469,6 +5501,7 @@ public class LauncherActivity extends Activity {
                 appByPackage.put(pkg, a);
             });
             if (ok && !appList.isEmpty()) {
+                applyStoredOrder(appList);
                 RecyclingShelfView s = shelf;
                 if (s != null) {
                     // Pre-seed so setApps posts the saved index, not 0.
@@ -5491,7 +5524,6 @@ public class LauncherActivity extends Activity {
                 List<AppInfo> fresh;
                 try {
                     fresh = queryApps();
-                    applyStoredOrder(fresh);
                 } catch (Throwable t) {
                     // Belt-and-braces: PackageManager binder errors, dead
                     // ResolveInfo, or any other unexpected exception inside
@@ -5519,6 +5551,9 @@ public class LauncherActivity extends Activity {
                     // lifetime.
                     try {
                         if (destroyed) return;
+                        // Read current preferences after the background scan: a toggle
+                        // or move may have changed the order while it was running.
+                        applyStoredOrder(freshFinal);
                         // Build the "fresh package set" exactly ONCE per
                         // reconcile and share it across the icon-cache
                         // invalidation, pruneHiddenApps, and pruneKeyMap
@@ -6229,6 +6264,7 @@ public class LauncherActivity extends Activity {
         pushHomeRow(s, visible, hc);
         AppDrawer d = drawer;
         if (d != null) d.setApps(visible, hc);
+        if (!showHomeRow()) s.setVisibility(View.INVISIBLE);
     }
 
     /** Pre-warm the small round chip icons for the keymap overlay. v1.5.0:
@@ -6365,6 +6401,14 @@ public class LauncherActivity extends Activity {
             // the balanced DOWN+UP pair. Everything else stays swallowed so
             // an unmapped remote button can't bleed to the shelf underneath.
             if (isLetThroughKey(event.getKeyCode())) return super.dispatchKeyEvent(event);
+            return true;
+        }
+        // With no home row, DOWN opens the apps from anywhere on the home screen.
+        // Modal panels above keep their own navigation, and the open drawer
+        // continues to handle DOWN as ordinary grid navigation.
+        if (!showHomeRow() && event.getKeyCode() == KeyEvent.KEYCODE_DPAD_DOWN
+                && drawer != null && drawer.getVisibility() != View.VISIBLE) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) openDrawer();
             return true;
         }
         if (event.getAction() == KeyEvent.ACTION_DOWN
@@ -6773,7 +6817,11 @@ public class LauncherActivity extends Activity {
                 TextView ind = (TextView) indicatorView;
                 int[] pageRows = settingsPageRows();
                 int rowId = (i < pageRows.length) ? pageRows[i] : -1;
-                if (rowId == SR_CLOCK) {
+                if (rowId == SR_ALPHABETICAL || rowId == SR_HOME_ROW) {
+                    boolean on = rowId == SR_ALPHABETICAL ? alwaysAlphabetical() : showHomeRow();
+                    ind.setText(on ? "On" : "Off");
+                    ind.setTextColor(on ? (sel ? selTx : 0xFF7DD3FC) : (sel ? 0x66111114 : 0x66FFFFFF));
+                } else if (rowId == SR_CLOCK) {
                     // 3-state clock indicator: Full / Time / Off.
                     ind.setText(clockMode == CLOCK_FULL ? "Full"
                               : clockMode == CLOCK_TIME_ONLY ? "Time" : "Off");
@@ -6886,6 +6934,24 @@ public class LauncherActivity extends Activity {
     /** Execute the action bound to a settings row id. */
     private void activateSettingsRowId(int rowId) {
         switch (rowId) {
+            case SR_APPS_MENU:
+                enterSettingsPage(SPAGE_APPS, SR_APPS_MENU);
+                break;
+            case SR_ALPHABETICAL:
+                // Capture the current arrangement before temporarily overriding it.
+                if (!alwaysAlphabetical()) saveOrder();
+                prefs.edit().putBoolean(KEY_ALPHABETICAL, !alwaysAlphabetical()).apply();
+                applyStoredOrder(appList);
+                applyShelfApps(shelf);
+                refreshSettingsRows();
+                break;
+            case SR_HOME_ROW:
+                prefs.edit().putBoolean(KEY_HOME_ROW, !showHomeRow()).apply();
+                if (drawer != null) drawer.forceHide();
+                applyShelfApps(shelf);
+                if (showHomeRow() && shelf != null) shelf.setVisibility(View.VISIBLE);
+                refreshSettingsRows();
+                break;
             case SR_HIDE_APPS:
                 // Hand off to the keymap card's HIDE mode (returns here on Back).
                 pendingSettingsCursor       = SR_HIDE_APPS;
@@ -8853,6 +8919,7 @@ public class LauncherActivity extends Activity {
      *  close (keymapHideDirty) renders it. */
     private void repositionUnhiddenIntoDrawer(AppInfo app) {
         if (app == null) return;
+        if (alwaysAlphabetical()) { applyStoredOrder(appList); return; }
         int hc = effectiveHomeCount(countVisible(appList));   // app is already un-hidden here
         if (!appList.remove(app)) return;
         int seen = 0, insertAt = appList.size();
@@ -9353,7 +9420,7 @@ public class LauncherActivity extends Activity {
                 hc,
                 prefs.getString(KEY_KEYMAP, ""),
                 prefs.getString(KEY_HIDDEN, ""),
-                clockMode);
+                clockMode, alwaysAlphabetical(), showHomeRow());
         try (java.io.OutputStream os = getContentResolver().openOutputStream(uri, "w")) {
             if (os == null) { showToast(getString(R.string.toast_backup_failed)); return; }
             os.write(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -9399,6 +9466,8 @@ public class LauncherActivity extends Activity {
         if (p.has(SettingsBackup.K_APP_ORDER)) ed.putString(KEY_APP_ORDER, p.str(SettingsBackup.K_APP_ORDER));
         if (p.has(SettingsBackup.K_KEY_MAP))   ed.putString(KEY_KEYMAP,    p.str(SettingsBackup.K_KEY_MAP));
         if (p.has(SettingsBackup.K_HIDDEN))    ed.putString(KEY_HIDDEN,    p.str(SettingsBackup.K_HIDDEN));
+        if (p.has(SettingsBackup.K_ALPHABETICAL)) ed.putBoolean(KEY_ALPHABETICAL, p.intVal(SettingsBackup.K_ALPHABETICAL, 0) == 1);
+        if (p.has(SettingsBackup.K_HOME_ROW)) ed.putBoolean(KEY_HOME_ROW, p.intVal(SettingsBackup.K_HOME_ROW, 1) == 1);
         int hc = p.intVal(SettingsBackup.K_HOME_COUNT, -1);
         if (hc >= 1) ed.putInt(KEY_HOME_COUNT, hc);
         int cm = p.intVal(SettingsBackup.K_CLOCK_MODE, -1);
@@ -9409,6 +9478,10 @@ public class LauncherActivity extends Activity {
         }
         ed.apply();
 
+        if (showHomeRow() && drawer != null) {
+            drawer.forceHide();
+            if (shelf != null) shelf.setVisibility(View.VISIBLE);
+        }
         // Reload in-memory state from the freshly-written prefs.
         loadKeyMap();
         loadHiddenApps();

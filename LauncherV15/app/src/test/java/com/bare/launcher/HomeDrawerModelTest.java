@@ -22,6 +22,26 @@ public class HomeDrawerModelTest {
         return l;
     }
 
+    @Test public void gridOnlyMovingUpNeverCreatesHomeRow() {
+        List<String> apps = list(14);
+        List<String> original = new ArrayList<>(apps);
+        for (int i = 0; i < HomeDrawerModel.COLS; i++) {
+            HomeDrawerModel.MoveResult r = HomeDrawerModel.moveUp(apps, i, 0, false);
+            assertEquals(0, r.homeCount);
+            assertEquals(i, r.index);
+            assertEquals(original, apps);
+        }
+        HomeDrawerModel.MoveResult up = HomeDrawerModel.moveUp(apps, 8, 0, false);
+        assertEquals(0, up.homeCount);
+        assertEquals(2, up.index);
+        assertEquals("p8", apps.get(2));
+        assertEquals("p2", apps.get(8));
+        HomeDrawerModel.MoveResult down = HomeDrawerModel.moveDown(apps, 2, 0);
+        assertEquals(0, down.homeCount);
+        assertEquals(8, down.index);
+        assertEquals(original, apps);
+    }
+
     // ── homeCount hygiene ────────────────────────────────────────────────
 
     @Test public void cols_isSix() { assertEquals(6, HomeDrawerModel.COLS); }
